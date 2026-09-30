@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NBA 順位予想ツール</title>
+  <!-- SortableJS (ドラッグ＆ドロップ・タッチ操作用) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+  <!-- html2canvas (画像保存用) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+    body {
+      background-color: #f0f2f5;
+      padding: 20px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .header {
+      margin-bottom: 15px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      color: #1d4ed8;
+      margin-bottom: 6px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      max-width: 480px;
+    }
+    .btn {
+      background-color: #1d4ed8;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: background-color 0.2s, opacity 0.2s;
+    }
+    .btn:active {
+      opacity: 0.8;
+    }
+    .btn-secondary {
+      background-color: #4b5563;
+    }
+    .btn-active {
+      background-color: #1d4ed8 !important;
+      ring: 2px solid #93c5fd;
+    }
+    .btn-danger {
+      background-color: #dc2626;
+    }
+    /* 保存対象のカード */
+    #ranking-card {
+      background: #ffffff;
+      width: 100%;
+      max-width: 480px;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .card-title {
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: #111827;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+    .ranking-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ranking-item {
+      display: flex;
+      align-items: center;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 8px 12px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .ranking-item:active {
+      cursor: grabbing;
+      background: #eff6ff;
+    }
+    .rank-num {
+      width: 32px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #374151;
+      text-align: center;
+    }
+    .team-logo {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+      margin: 0 12px;
+    }
+    .team-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #1f2937;
+      flex-grow: 1;
+    }
+    .drag-handle {
+      color: #9ca3af;
+      font-size: 1.2rem;
+    }
+    .sortable-ghost {
+      opacity: 0.4;
+      background: #dbeafe;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      background: rgba(17, 24, 39, 0.85);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>NBA 順位予想ツール</h1>
+    <p style="font-size: 0.85rem; color: #6b7280;">順位変更は自動で一時保存されます</p>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-secondary" id="btn-west" onclick="switchConference('WEST')">West</button>
+    <button class="btn btn-secondary" id="btn-east" onclick="switchConference('EAST')">East</button>
+    <button class="btn" onclick="saveAsImage()">画像として保存</button>
+    <button class="btn btn-danger" onclick="resetCurrentConf()">初期化</button>
+  </div>
+
+  <div id="ranking-card">
+    <div class="card-title" id="conf-title">ウェスタン・カンファレンス 予想</div>
+    <ul class="ranking-list" id="ranking-list">
+      <!-- JavaScriptで動的生成 -->
+    </ul>
+  </div>
+
+  <div class="toast" id="toast">自動保存しました</div>
+
+  <script>
+    // デフォルトのチームデータ
+    const defaultTeamsData = {
+      WEST: [
+        { id: 'okc', name: 'オクラホマシティ・サンダー', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/b4bJ9zKFBDykdSIGUrbWdw_500x500.png' },
+        { id: 'den', name: 'デンバー・ナゲッツ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/9wPFTOxV_zP1KmRRggJNqQ_500x500.png' },
+        { id: 'min', name: 'ミネソタ・ティンバーウルブズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/VrK5wJLK8o-QV1Cs-1WO6A_500x500.png' },
+        { id: 'lal', name: 'ロサンゼルス・レイカーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/4ndR-n-gall7_h3f7NYcpQ_500x500.png' },
+        { id: 'gsw', name: 'ゴールデンステート・ウォリアーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/ovwlyYHRKZ90s7zn_qlMCg_500x500.png' },
+        { id: 'dal', name: 'ダラス・マーベリックス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/xxxlj9RpmAKJ9P9phstWCQ_500x500.png' },
+        { id: 'phx', name: 'フェニックス・サンズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/pRr87i24KHWH0UuAc5EamQ_500x500.png' },
+        { id: 'sac', name: 'サクラメント・キングス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/wkCDHakxEThLGoZ4Ven48Q_500x500.png' },
+        { id: 'hou', name: 'ヒューストン・ロケッツ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/LGQbRZSX8NrJBfGrnlzE6Q_500x500.png' },
+        { id: 'mem', name: 'メンフィス・グリズリーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/cPBaon0tDBPu6Wqu-JkGzQ_500x500.png' },
+        { id: 'lac', name: 'ロサンゼルス・クリッパーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/Qfmcz6S86sLz19CP8Hv0Gw_500x500.png' },
+        { id: 'nop', name: 'ニューオーリンズ・ペリカンズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/JCQO978-AWbg00TQUNPUVg_500x500.png' },
+        { id: 'sas', name: 'サンアントニオ・スパーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/FKwMB_85FlZ_7PTt1f7hjQ_500x500.png' },
+        { id: 'por', name: 'ポートランド・トレイルブレイザーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/_bgagBCd6ieOIt3INWRN_w_500x500.png' },
+        { id: 'uta', name: 'ユタ・ジャズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/8-M9TwRyXGqWqhI2UHZFWg_500x500.png' }
+      ],
+      EAST: [
+        { id: 'bos', name: 'ボストン・セルティックス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/GDJBo7eEF8EO5-kDHVpdqw_500x500.png' },
+        { id: 'nyk', name: 'ニューヨーク・ニックス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/-rf7eY39l_0V7J4ekakuKA_500x500.png' },
+        { id: 'mil', name: 'ミルウォーキー・バックス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/Wd6xIEIXpfqg9EZC6PAepQ_500x500.png' },
+        { id: 'cle', name: 'クリーブランド・キャバリアーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/NAlGkmv45l1L-3NhwVhDPg_500x500.png' },
+        { id: 'phi', name: 'フィラデルフィア・76ers', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/US6KILZue2D5766trEf0Mg_500x500.png' },
+        { id: 'ind', name: 'インディアナ・ペイサーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/I3MuFlxv71r8Hgws3Qf_oA_500x500.png' },
+        { id: 'orl', name: 'オーランド・マジック', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/YaftZcw8oWwRh6CLYoq2Vw_500x500.png' },
+        { id: 'mia', name: 'マイアミ・ヒート', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/0nQXN6OF7wnLY3hJz8lZJQ_500x500.png' },
+        { id: 'chi', name: 'シカゴ・ブルズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/ofjScRGiytT__Flak2j4dg_500x500.png' },
+        { id: 'atl', name: 'アトランタ・ホークス', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/pm5l5mtY1elOQAl9ZEcm2A_500x500.png' },
+        { id: 'bkn', name: 'ブルックリン・ネッツ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/booQJbi9Uew90gakPxUiVA_500x500.png' },
+        { id: 'tor', name: 'トロント・ラプターズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/5sHsS5f1a6SCgiaYqWkC-w_500x500.png' },
+        { id: 'cha', name: 'シャーロット・ホーネッツ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/ToeKy5-TrHAnTCl-qhuuHQ_500x500.png' },
+        { id: 'was', name: 'ワシントン・ウィザーズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/NBkMJapxft4V5kvufec4Jg_500x500.png' },
+        { id: 'det', name: 'デトロイト・ピストンズ', logo: 'https://ssl.gstatic.com/onebox/media/sports/logos/optimized/qvWE2FgBX0MCqFfciFBDiw_500x500.png' }
+      ]
+    };
+
+    let currentConf = 'WEST';
+    const listEl = document.getElementById('ranking-list');
+
+    // ローカルストレージから保存データを読み込む
+    function loadSavedTeams(conf) {
+      const savedData = localStorage.getItem(`nba_pred_${conf}`);
+      if (!savedData) return defaultTeamsData[conf];
+
+      try {
+        const savedIds = JSON.parse(savedData);
+        // 保存されたID順に並び替え
+        const teamMap = new Map(defaultTeamsData[conf].map(t => [t.id, t]));
+        const orderedTeams = savedIds.map(id => teamMap.get(id)).filter(Boolean);
+        
+        // 件数が不足していればデフォルトを返す
+        return orderedTeams.length === 15 ? orderedTeams : defaultTeamsData[conf];
+      } catch (e) {
+        return defaultTeamsData[conf];
+      }
+    }
+
+    // 現在の並び順をローカルストレージへ保存する
+    function saveCurrentOrder() {
+      const items = listEl.querySelectorAll('.ranking-item');
+      const currentIds = Array.from(items).map(item => item.dataset.id);
+      localStorage.setItem(`nba_pred_${currentConf}`, JSON.stringify(currentIds));
+      showToast('順位を一時保存しました');
+    }
+
+    // リストの描画処理
+    function renderList(conf) {
+      currentConf = conf;
+      document.getElementById('conf-title').textContent = conf === 'WEST' ? 'ウェスタン・カンファレンス 予想' : 'イースタン・カンファレンス 予想';
+      
+      // ボタンの見た目を更新
+      document.getElementById('btn-west').className = `btn ${conf === 'WEST' ? 'btn-active' : 'btn-secondary'}`;
+      document.getElementById('btn-east').className = `btn ${conf === 'EAST' ? 'btn-active' : 'btn-secondary'}`;
+
+      listEl.innerHTML = '';
+      const teams = loadSavedTeams(conf);
+
+      teams.forEach((team, index) => {
+        const li = document.createElement('li');
+        li.className = 'ranking-item';
+        li.dataset.id = team.id;
+        li.innerHTML = `
+          <div class="rank-num">${index + 1}</div>
+          <img class="team-logo" src="${team.logo}" alt="${team.name}" crossorigin="anonymous">
+          <div class="team-name">${team.name}</div>
+          <div class="drag-handle">☰</div>
+        `;
+        listEl.appendChild(li);
+      });
+    }
+
+    // 順位表示の更新
+    function updateRankNumbers() {
+      const items = listEl.querySelectorAll('.ranking-item');
+      items.forEach((item, index) => {
+        item.querySelector('.rank-num').textContent = index + 1;
+      });
+      saveCurrentOrder(); // 並び替え完了時に自動保存
+    }
+
+    // SortableJS (ドラッグ＆ドロップ初期化)
+    const sortable = new Sortable(listEl, {
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: updateRankNumbers
+    });
+
+    // カンファレンス切り替え
+    function switchConference(conf) {
+      renderList(conf);
+    }
+
+    // 現在表示中のカンファレンスを初期状態に戻す
+    function resetCurrentConf() {
+      if (confirm(`${currentConf === 'WEST' ? 'ウェスタン' : 'イースタン'}の予想を初期状態に戻しますか？`)) {
+        localStorage.removeItem(`nba_pred_${currentConf}`);
+        renderList(currentConf);
+        showToast('初期状態にリセットしました');
+      }
+    }
+
+    // 画像保存処理
+    function saveAsImage() {
+      const card = document.getElementById('ranking-card');
+      html2canvas(card, {
+        useCORS: true,
+        scale: 2
+      }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `NBA_Prediction_${currentConf}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+    }
+
+    // トースト通知の表示
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // 初期起動
+    renderList('WEST');
+  </script>
+</body>
+</html>
